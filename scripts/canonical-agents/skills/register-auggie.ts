@@ -17,7 +17,6 @@
 
 import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
 
 import {
   parseCliOptions,
@@ -33,8 +32,7 @@ import {
  */
 async function main(): Promise<void> {
   const cliOptions = parseCliOptions(process.argv);
-  const scriptDirectoryPath = path.dirname(fileURLToPath(import.meta.url));
-  const repositoryRootDirectoryPath = path.resolve(scriptDirectoryPath, "..", "..", "..");
+  const repositoryRootDirectoryPath = process.cwd();
   const augmentSkillsDirectoryPath = path.join(
     repositoryRootDirectoryPath,
     ".augment",

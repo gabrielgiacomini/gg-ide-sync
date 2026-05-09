@@ -16,7 +16,6 @@
 
 import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
 import {
   parseCliOptions,
   registerSkillsToTarget,
@@ -31,15 +30,7 @@ import {
  */
 async function main(): Promise<void> {
   const cliOptions = parseCliOptions(process.argv);
-  const scriptDirectoryPath: string = path.dirname(
-    fileURLToPath(import.meta.url),
-  );
-  const repositoryRootDirectoryPath: string = path.resolve(
-    scriptDirectoryPath,
-    "..",
-    "..",
-    "..",
-  );
+  const repositoryRootDirectoryPath: string = process.cwd();
   const verdentSkillsDirectoryPath: string = path.join(
     repositoryRootDirectoryPath,
     ".verdent",
