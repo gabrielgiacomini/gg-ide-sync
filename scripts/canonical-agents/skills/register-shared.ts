@@ -17,7 +17,6 @@
  *
  * @testing Manual CLI — run `npx tsx scripts/canonical-agents/skills/register-shared.ts` from the repo root.
  * @see docs/COMMANDS.md - npm scripts that invoke skill sync (`skills:sync`, `skills:manager:*`).
- * @see canonical-skills/skills-manager/SKILL.md - Skill lifecycle and namespace governance for canonical skill definitions consumed by this helper.
  * @documentation reviewed=2026-04-30 standard=FILE_OVERVIEW_STANDARDS_TYPESCRIPT@3
  */
 
