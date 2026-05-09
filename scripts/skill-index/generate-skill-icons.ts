@@ -103,6 +103,12 @@ async function readYamlFile(filePath: string): Promise<YamlMapping | null> {
   return isRecord(parsed) ? parsed : null;
 }
 
+async function readOpenAiInterface(skillRoot: string): Promise<YamlMapping | null> {
+  const openAiYamlPath = path.join(skillRoot, "agents", "openai.yaml");
+  const openAiYaml = await readYamlFile(openAiYamlPath);
+  return openAiYaml && isRecord(openAiYaml.interface) ? openAiYaml.interface : null;
+}
+
 async function writeOpenAiYamlIfPresent(skillRoot: string): Promise<"missing" | "updated" | "unchanged"> {
   const openAiYamlPath = path.join(skillRoot, "agents", "openai.yaml");
   const openAiYaml = await readYamlFile(openAiYamlPath);
@@ -111,6 +117,14 @@ async function writeOpenAiYamlIfPresent(skillRoot: string): Promise<"missing" | 
   }
 
   const interfaceValue = isRecord(openAiYaml.interface) ? openAiYaml.interface : {};
+  const hasRequiredMetadata =
+    typeof interfaceValue.brand_color === "string" &&
+    typeof interfaceValue.icon_large === "string" &&
+    typeof interfaceValue.icon_small === "string";
+  if (hasRequiredMetadata) {
+    return "unchanged";
+  }
+
   const nextYaml: YamlMapping = {
     ...openAiYaml,
     interface: {
@@ -120,12 +134,7 @@ async function writeOpenAiYamlIfPresent(skillRoot: string): Promise<"missing" | 
       icon_small: typeof interfaceValue.icon_small === "string" ? interfaceValue.icon_small : ICON_SMALL_RELATIVE_PATH,
     },
   };
-  const nextContent = yaml.dump(nextYaml, { lineWidth: 100, noRefs: true, sortKeys: false });
-  const currentContent = await fs.readFile(openAiYamlPath, "utf8");
-  if (currentContent === nextContent) {
-    return "unchanged";
-  }
-  await fs.writeFile(openAiYamlPath, nextContent, "utf8");
+  await fs.writeFile(openAiYamlPath, yaml.dump(nextYaml, { lineWidth: 100, noRefs: true, sortKeys: false }), "utf8");
   return "updated";
 }
 
@@ -139,13 +148,22 @@ async function ensureSkillIcons(skillName: string): Promise<void> {
   const assetsDirectoryPath = path.join(skillRoot, "assets");
   await fs.mkdir(assetsDirectoryPath, { recursive: true });
   const label = buildMonogram(skillName);
-  const smallIconPath = path.join(assetsDirectoryPath, "icon-small.svg");
-  const largeIconPath = path.join(assetsDirectoryPath, "icon-large.svg");
-  if (!(await pathExists(smallIconPath))) {
-    await fs.writeFile(smallIconPath, buildSvgIcon({ label, size: 64 }), "utf8");
-  }
-  if (!(await pathExists(largeIconPath))) {
-    await fs.writeFile(largeIconPath, buildSvgIcon({ label, size: 160 }), "utf8");
+  const openAiInterface = await readOpenAiInterface(skillRoot);
+  const smallIconRelativePath = typeof openAiInterface?.icon_small === "string" ? openAiInterface.icon_small : ICON_SMALL_RELATIVE_PATH;
+  const largeIconRelativePath = typeof openAiInterface?.icon_large === "string" ? openAiInterface.icon_large : ICON_LARGE_RELATIVE_PATH;
+  const iconTargets = [
+    { relativePath: smallIconRelativePath, size: 64 },
+    { relativePath: largeIconRelativePath, size: 160 },
+  ];
+  for (const iconTarget of iconTargets) {
+    if (!iconTarget.relativePath.endsWith(".svg")) {
+      continue;
+    }
+    const iconPath = path.join(skillRoot, iconTarget.relativePath);
+    if (!(await pathExists(iconPath))) {
+      await fs.mkdir(path.dirname(iconPath), { recursive: true });
+      await fs.writeFile(iconPath, buildSvgIcon({ label, size: iconTarget.size }), "utf8");
+    }
   }
   const yamlStatus = await writeOpenAiYamlIfPresent(skillRoot);
   console.log(`[skills:sync:icons] ${skillName} ✓ icons refreshed${yamlStatus === "updated" ? ", openai metadata updated" : ""}`);
