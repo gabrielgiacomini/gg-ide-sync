@@ -109,10 +109,24 @@ const IGNORED_DIRECTORY_NAMES = new Set([
 ]);
 
 
+/**
+ * Normalizes a submodule-relative path into a stable lowercase slug for documentation-map rule ids.
+ *
+ * @remarks
+ * Collapses non-alphanumeric runs to single hyphens, trims leading and trailing hyphens, and uses
+ * the literal fallback `submodule` when the result would otherwise be empty.
+ */
 function slugifyScopeId(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "") || "submodule";
 }
 
+/**
+ * Resolves a human-facing title for a scope by reading `package.json` when present.
+ *
+ * @remarks
+ * I/O: synchronous read of `package.json` under the scope path; returns `relativePath` when the
+ * file is missing, unparsable, or lacks a non-empty string `name`.
+ */
 function readPackageDisplayName(repoRoot: string, relativePath: string): string {
   const packageJsonPath = path.join(repoRoot, relativePath, "package.json");
   if (!fs.existsSync(packageJsonPath)) {
@@ -134,6 +148,14 @@ function readPackageDisplayName(repoRoot: string, relativePath: string): string 
   return relativePath;
 }
 
+/**
+ * Builds the platform-root scope plus one scope per configured git submodule for inventory passes.
+ *
+ * @remarks
+ * Submodule ids come from `slugifyScopeId` on the configured relative path; titles prefer
+ * `readPackageDisplayName`. Ordering is root first, then submodules as returned by the platform
+ * submodule list helper.
+ */
 function buildRepoScopes(repoRoot: string): RepoScope[] {
   const submoduleScopes = PlatformSubmoduleAutomation_listConfiguredSubmodulePaths(repoRoot).map((relativePath) => ({
     id: slugifyScopeId(relativePath),

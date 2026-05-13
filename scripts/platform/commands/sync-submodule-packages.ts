@@ -14,7 +14,7 @@
  * @testing CLI manual: run `npm run sync:submodules -- --dry-run` to confirm existing
  * submodule sync targets are discovered without mutating generated files.
  * @see package.json - Root `sync` invokes this command after root-owned sync targets finish.
- * @documentation reviewed=2026-05-06 standard=FILE_OVERVIEW_STANDARDS_TYPESCRIPT@3
+ * @documentation reviewed=2026-05-13 standard=FILE_OVERVIEW_STANDARDS_TYPESCRIPT@3
  */
 
 import { spawnSync } from "node:child_process";
@@ -72,6 +72,13 @@ function readSubmodulePaths(repoRoot: string): string[] {
   return paths;
 }
 
+/**
+ * Reads a submodule `package.json` and returns a narrowed JSON object contract.
+ *
+ * @remarks
+ * Thin wrapper around `readJsonRecord` so discovery treats package manifests as the same defensive
+ * parse path as other JSON inputs (missing file, invalid JSON, or non-object root yield null).
+ */
 function readPackageJson(packageJsonPath: string): JsonRecord | null {
   return readJsonRecord(packageJsonPath);
 }
@@ -87,6 +94,13 @@ function readSyncScript(packageJson: JsonRecord): string | null {
   return typeof syncScript === "string" ? syncScript : null;
 }
 
+/**
+ * Resolves the npm package name used for logging and skip rules during discovery.
+ *
+ * @remarks
+ * Accepts the first non-empty string `name` field; otherwise uses `fallbackName` (the submodule
+ * path segment) so partially authored or anonymous manifests still produce stable labels.
+ */
 function readPackageName(packageJson: JsonRecord, fallbackName: string): string {
   const name = packageJson["name"];
   return typeof name === "string" && name.trim().length > 0 ? name.trim() : fallbackName;

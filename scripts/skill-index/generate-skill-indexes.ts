@@ -4,7 +4,7 @@
  *
  * @testing CLI: `npm run skills:sync` after adding, renaming, or retargeting skills.
  * @see canonical-skills/gg-ide-sync/scripts/skill-index/skill-index-shared.ts - Entry collection, sorting, and markdown render contract shared with other tooling.
- * @documentation reviewed=2026-05-09 standard=FILE_OVERVIEW_STANDARDS_TYPESCRIPT@3
+ * @documentation reviewed=2026-05-13 standard=FILE_OVERVIEW_STANDARDS_TYPESCRIPT@3
  */
 
 import fs from "node:fs";
@@ -15,6 +15,13 @@ import {
   renderGeneratedSkillIndexFile,
 } from "./skill-index-shared";
 
+/**
+ * Persists rendered index markdown when the target file is missing or its bytes differ.
+ *
+ * @remarks
+ * I/O: Synchronous `fs` read/write on `options.filePath` (expected absolute). The returned status
+ * lets callers emit concise logs without re-stating filesystem state.
+ */
 function writeGeneratedFile(options: {
   content: string;
   filePath: string;
@@ -33,6 +40,13 @@ function writeGeneratedFile(options: {
   return "updated";
 }
 
+/**
+ * Runs the skill-index generator from the current working directory as the repository root.
+ *
+ * @remarks
+ * Honors `SYNC_VERBOSE` / `WORKFLOWS_SYNC_VERBOSE` for optional per-file console output. Delegates
+ * entry discovery, sorting, and markdown rendering to `./skill-index-shared`.
+ */
 function main(): void {
   const verbose =
     process.env.SYNC_VERBOSE === "1" ||

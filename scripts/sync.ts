@@ -9,7 +9,7 @@
  * @testing CLI: npx tsx canonical-skills/gg-ide-sync/scripts/sync.ts --dry-run
  * @testing CLI: npx tsx canonical-skills/gg-ide-sync/scripts/sync.ts --lane skills
  * @see canonical-skills/gg-ide-sync/SKILL.md - Operator workflow and lane descriptions.
- * @documentation reviewed=2026-05-09 standard=FILE_OVERVIEW_STANDARDS_TYPESCRIPT@3
+ * @documentation reviewed=2026-05-13 standard=FILE_OVERVIEW_STANDARDS_TYPESCRIPT@3
  */
 
 import { spawnSync } from "node:child_process";
@@ -17,8 +17,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+/**
+ * Named IDE sync lane the CLI can select explicitly or inherit via the default full run.
+ *
+ * @remarks
+ * Lane order in argv is preserved; the orchestrator still runs each lane's commands in the contract order below.
+ */
 type SyncLane = "skills" | "agents" | "workflows" | "rules" | "submodules";
 
+/**
+ * One synchronous child-process invocation the orchestrator runs from the target repository root.
+ *
+ * @remarks
+ * `optionalWhenMissing` allows skipping commands when a repo lacks optional fixtures (for example, submodule-only tests).
+ */
 type SyncCommand = {
   args: string[];
   command: string;
@@ -31,6 +43,12 @@ const ALL_LANES: SyncLane[] = ["skills", "agents", "workflows", "rules", "submod
 const CURRENT_FILE_PATH = fileURLToPath(import.meta.url);
 const SCRIPT_DIRECTORY_PATH = path.dirname(CURRENT_FILE_PATH);
 
+/**
+ * Collects `--lane` / `--lane=` selections from argv, defaulting to every lane when none are provided.
+ *
+ * @remarks
+ * Unknown lane tokens throw before any child processes start so failures stay deterministic and local to argv parsing.
+ */
 function parseLanes(argv: string[]): SyncLane[] {
   const selectedLanes: SyncLane[] = [];
   for (let index = 0; index < argv.length; index += 1) {
@@ -58,22 +76,40 @@ function parseLanes(argv: string[]): SyncLane[] {
   return selectedLanes.length > 0 ? selectedLanes : ALL_LANES;
 }
 
+/**
+ * Narrows untrusted argv fragments to the closed `SyncLane` union.
+ *
+ * @remarks
+ * `parseLanes` combines this guard with explicit throws so unknown lane tokens never reach orchestration.
+ */
 function isSyncLane(value: unknown): value is SyncLane {
   return typeof value === "string" && ALL_LANES.includes(value as SyncLane);
 }
 
+/**
+ * Resolves helper script paths relative to this file's directory so `tsx` can load sibling tooling.
+ */
 function scriptPath(relativePath: string): string {
   return path.join(SCRIPT_DIRECTORY_PATH, relativePath);
 }
 
+/**
+ * Joins repository-relative paths against `repoRoot` while leaving absolute inputs untouched.
+ */
 function targetPath(repoRoot: string, candidatePath: string): string {
   return path.isAbsolute(candidatePath) ? candidatePath : path.join(repoRoot, candidatePath);
 }
 
+/**
+ * Filesystem existence probe for paths interpreted from the active repository root.
+ */
 function exists(repoRoot: string, candidatePath: string): boolean {
   return fs.existsSync(targetPath(repoRoot, candidatePath));
 }
 
+/**
+ * Builds a labeled `npx tsx <local-script> ...args` command for lane orchestration.
+ */
 function tsxCommand(label: string, relativeScriptPath: string, args: string[] = []): SyncCommand {
   return {
     args: ["tsx", scriptPath(relativeScriptPath), ...args],
@@ -82,6 +118,12 @@ function tsxCommand(label: string, relativeScriptPath: string, args: string[] = 
   };
 }
 
+/**
+ * Expands a lane into ordered child commands honoring dry-run vs write semantics and repo-specific skips.
+ *
+ * @remarks
+ * Submodule lane returns an empty list when `.gitmodules` is absent; rules lane may attach `optionalWhenMissing` for optional tests.
+ */
 function buildCommandsForLane(options: { dryRun: boolean; lane: SyncLane; repoRoot: string }): SyncCommand[] {
   const writeFlag = options.dryRun ? [] : ["--write"];
 
@@ -136,6 +178,12 @@ function buildCommandsForLane(options: { dryRun: boolean; lane: SyncLane; repoRo
   }
 }
 
+/**
+ * Runs one sync command synchronously with inherited stdio, honoring optional skip paths.
+ *
+ * @remarks
+ * I/O: uses `spawnSync` from the target `repoRoot`; signals map to exit code `1` for operator visibility.
+ */
 function runCommand(command: SyncCommand, repoRoot: string): number {
   if (command.optionalWhenMissing && !exists(repoRoot, command.optionalWhenMissing)) {
     console.log(`[ide-sync] skip ${command.label}: ${command.optionalWhenMissing} not found`);
@@ -157,6 +205,12 @@ function runCommand(command: SyncCommand, repoRoot: string): number {
   return result.status ?? 0;
 }
 
+/**
+ * CLI entry that sequences selected lanes, stopping on the first failing child exit status.
+ *
+ * @remarks
+ * Treats `--check` as a dry-run alias; never swallows child exit codes except optional skips returning `0`.
+ */
 function main(): number {
   const argv = process.argv.slice(2);
   const dryRun = argv.includes("--dry-run") || argv.includes("--check");

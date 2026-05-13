@@ -8,17 +8,32 @@
  *
  * @testing CLI: npx tsx canonical-skills/gg-ide-sync/scripts/skill-index/generate-skill-icons.ts
  * @see canonical-skills/gg-ide-sync/scripts/sync.ts - Orchestrates this script in the `skills` lane.
- * @documentation reviewed=2026-05-09 standard=FILE_OVERVIEW_STANDARDS_TYPESCRIPT@3
+ * @documentation reviewed=2026-05-13 standard=FILE_OVERVIEW_STANDARDS_TYPESCRIPT@3
  */
 
 import fs from "node:fs/promises";
 import path from "node:path";
 import yaml from "js-yaml";
 
+/**
+ * Parsed CLI options controlling which skill folders are processed.
+ *
+ * @remarks
+ * When `skills` is empty, the generator scans every non-hidden directory under `canonical-skills/`
+ * that contains a `SKILL.md`. Non-empty lists restrict work to those names and must match
+ * on-disk folders or `collectSkillDirectories` throws.
+ */
 type Options = {
   skills: string[];
 };
 
+/**
+ * Parsed YAML object treated as a string-keyed mapping before field-level narrowing.
+ *
+ * @remarks
+ * Used for `js-yaml` loads where structure is validated incrementally via `isRecord` and
+ * downstream `typeof` checks rather than a schema.
+ */
 type YamlMapping = Record<string, unknown>;
 
 const REPO_ROOT = process.cwd();
@@ -27,10 +42,23 @@ const ICON_SMALL_RELATIVE_PATH = "./assets/icon-small.svg";
 const ICON_LARGE_RELATIVE_PATH = "./assets/icon-large.svg";
 const DEFAULT_BRAND_COLOR = "#6366f1";
 
+/**
+ * Narrows unknown YAML/JSON values to plain non-array objects with string keys.
+ *
+ * @remarks
+ * PURITY: pure; rejects arrays because YAML sequences deserialize as arrays.
+ */
 function isRecord(value: unknown): value is YamlMapping {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Extracts optional `--skill=name1,name2` filters from raw argv tokens.
+ *
+ * @remarks
+ * PURITY: pure; unknown tokens are ignored so callers can pass through `process.argv` slices
+ * safely.
+ */
 function parseOptions(argv: string[]): Options {
   const skills: string[] = [];
   for (const token of argv) {
@@ -41,6 +69,12 @@ function parseOptions(argv: string[]): Options {
   return { skills };
 }
 
+/**
+ * Returns whether a filesystem path is currently accessible.
+ *
+ * @remarks
+ * I/O: `fs.access`; maps missing entries and permission failures to `false` without throwing.
+ */
 async function pathExists(filePath: string): Promise<boolean> {
   try {
     await fs.access(filePath);
@@ -50,6 +84,13 @@ async function pathExists(filePath: string): Promise<boolean> {
   }
 }
 
+/**
+ * Builds a two-letter monogram label from a canonical skill directory name.
+ *
+ * @remarks
+ * PURITY: pure; splits on `-`, skips empty tokens and generic `skill`/`skills` segments, and
+ * falls back to `SK` when not enough letters remain.
+ */
 function buildMonogram(skillName: string): string {
   const tokens = skillName.split("-").filter((token) => token.length > 0 && token !== "skill" && token !== "skills");
   const first = tokens[0]?.charAt(0).toUpperCase() ?? "S";
@@ -57,6 +98,12 @@ function buildMonogram(skillName: string): string {
   return `${first}${second}`;
 }
 
+/**
+ * Renders a square SVG string with gradient background and centered monogram text.
+ *
+ * @remarks
+ * PURITY: pure string assembly only; callers decide where the bytes are written.
+ */
 function buildSvgIcon(options: { label: string; size: number }): string {
   const fontSize = Math.round(options.size * 0.34);
   const radius = Math.round(options.size * 0.22);
@@ -75,6 +122,13 @@ function buildSvgIcon(options: { label: string; size: number }): string {
   ].join("\n");
 }
 
+/**
+ * Lists candidate skill directory names under `canonical-skills/`, optionally filtered.
+ *
+ * @remarks
+ * I/O: reads `SKILLS_ROOT` directory entries sorted lexicographically. When `requestedSkills` is
+ * non-empty, validates each name exists on disk and throws listing unknowns to fail fast.
+ */
 async function collectSkillDirectories(requestedSkills: string[]): Promise<string[]> {
   const entries = await fs.readdir(SKILLS_ROOT, { withFileTypes: true });
   const allSkillDirectories = entries
@@ -94,6 +148,13 @@ async function collectSkillDirectories(requestedSkills: string[]): Promise<strin
   return requestedSkills;
 }
 
+/**
+ * Reads a YAML file when present and returns a mapping-shaped document, else null.
+ *
+ * @remarks
+ * I/O: `fs.readFile` plus `yaml.load`. Returns `null` when the path is missing or the parsed
+ * value is not a record-shaped object.
+ */
 async function readYamlFile(filePath: string): Promise<YamlMapping | null> {
   if (!(await pathExists(filePath))) {
     return null;
@@ -103,12 +164,27 @@ async function readYamlFile(filePath: string): Promise<YamlMapping | null> {
   return isRecord(parsed) ? parsed : null;
 }
 
+/**
+ * Loads the `interface` block from `agents/openai.yaml` for a skill when it is record-shaped.
+ *
+ * @remarks
+ * I/O: delegates to `readYamlFile` under `skillRoot`. Returns `null` when the file or `interface`
+ * subtree is absent or not a mapping.
+ */
 async function readOpenAiInterface(skillRoot: string): Promise<YamlMapping | null> {
   const openAiYamlPath = path.join(skillRoot, "agents", "openai.yaml");
   const openAiYaml = await readYamlFile(openAiYamlPath);
   return openAiYaml && isRecord(openAiYaml.interface) ? openAiYaml.interface : null;
 }
 
+/**
+ * Ensures `agents/openai.yaml` advertises default brand and icon paths when metadata is incomplete.
+ *
+ * @remarks
+ * I/O: reads and may rewrite `openai.yaml` with stable defaults and existing field preservation.
+ * Returns `missing` when the file is absent, `unchanged` when all required interface strings are
+ * already present, otherwise `updated` after a write.
+ */
 async function writeOpenAiYamlIfPresent(skillRoot: string): Promise<"missing" | "updated" | "unchanged"> {
   const openAiYamlPath = path.join(skillRoot, "agents", "openai.yaml");
   const openAiYaml = await readYamlFile(openAiYamlPath);
@@ -138,6 +214,14 @@ async function writeOpenAiYamlIfPresent(skillRoot: string): Promise<"missing" | 
   return "updated";
 }
 
+/**
+ * Creates missing SVG assets and reconciles OpenAI skill metadata for one canonical skill folder.
+ *
+ * @remarks
+ * I/O: ensures `assets/` directories, writes SVGs when paths end with `.svg` and files are
+ * missing, then may update `agents/openai.yaml`. No-ops early when `SKILL.md` is absent. Logs a
+ * single status line including whether YAML metadata was patched.
+ */
 async function ensureSkillIcons(skillName: string): Promise<void> {
   const skillRoot = path.join(SKILLS_ROOT, skillName);
   const skillFilePath = path.join(skillRoot, "SKILL.md");
@@ -169,6 +253,14 @@ async function ensureSkillIcons(skillName: string): Promise<void> {
   console.log(`[skills:sync:icons] ${skillName} ✓ icons refreshed${yamlStatus === "updated" ? ", openai metadata updated" : ""}`);
 }
 
+/**
+ * CLI entrypoint that scans or filters skills and refreshes icons sequentially.
+ *
+ * @remarks
+ * I/O: walks resolved skill directories under `SKILLS_ROOT`, skipping the whole run when the
+ * directory is missing. Processes each skill with `await ensureSkillIcons` to keep filesystem
+ * writes ordered and easy to reason about in logs.
+ */
 async function main(): Promise<void> {
   const options = parseOptions(process.argv.slice(2));
   if (!(await pathExists(SKILLS_ROOT))) {

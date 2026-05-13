@@ -1,8 +1,12 @@
 /**
  * @fileoverview Jest configuration for the portable IDE sync skill scripts.
  *
+ * This file owns the Jest roots, ESM/ts-jest transform wiring, and test match patterns used when
+ * running `gg-ide-sync` script unit tests from the repository root.
+ *
  * @testing CLI: NODE_OPTIONS='--experimental-vm-modules' npx jest --config canonical-skills/gg-ide-sync/jest.config.ts
- * @see scripts/__tests__/ - Unit tests for agent, guidance, rule, and workflow sync helpers.
+ * @see canonical-skills/gg-ide-sync/scripts/__tests__/ - Jest unit specs for agent, guidance, rule, and workflow sync helpers executed via this config.
+ * @documentation reviewed=2026-05-13 standard=FILE_OVERVIEW_STANDARDS_TYPESCRIPT@3
  */
 import type { Config } from "jest";
 
