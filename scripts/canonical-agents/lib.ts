@@ -21,8 +21,8 @@
  *
  * @testing Jest unit: NODE_OPTIONS='--experimental-vm-modules' npx jest --config jest.config.ts scripts/__tests__/sync-agents-lib.unit.test.ts
  *
- * @see scripts/canonical-agents/generate.ts - CLI entrypoint that orchestrates discovery, target building, and sync via this library.
- * @see scripts/__tests__/sync-agents-lib.unit.test.ts - Jest coverage for agent parsing, override merging, target formatting, and sync-engine drift detection.
+ * @see canonical-skills/gg-ide-sync/scripts/canonical-agents/generate.ts - CLI entrypoint that orchestrates discovery, target building, and sync via this library.
+ * @see canonical-skills/gg-ide-sync/scripts/__tests__/sync-agents-lib.unit.test.ts - Jest coverage for agent parsing, override merging, target formatting, and sync-engine drift detection.
  * @see docs/TYPESCRIPT_STANDARDS_DOCUMENTATION_FILE_OVERVIEWS.md - Standard document that defines the file-overview format used by this header.
  * @documentation reviewed=2026-04-30 standard=FILE_OVERVIEW_STANDARDS_TYPESCRIPT@3
  */
@@ -119,7 +119,14 @@ export type SyncResult = {
   unchanged: number;
 };
 
-const codexSandboxModes = ["read-only", "workspace-write", "danger-full-access"] as const;
+/** Write-through, dry-run preview, or check-only drift detection for agent/command sync entrypoints. */
+type CanonicalAgentsLib_SyncMode = "dry-run" | "write" | "check";
+
+const codexSandboxModes = [
+  "read-only",
+  "workspace-write",
+  "danger-full-access",
+] as const;
 /** Closed union of Codex sandbox tokens emitted into generated agent TOML. */
 type CodexSandboxMode = (typeof codexSandboxModes)[number];
 const canonicalApprovalFlows = ["default", "plan"] as const;
@@ -157,7 +164,10 @@ function extractFrontmatter(
 }
 
 /** Parses a canonical agent markdown file, extracting YAML frontmatter and trimmed body. Throws if frontmatter is absent or invalid. */
-export function parseCanonicalAgent(filePath: string, source: "agents" | "subagents"): CanonicalAgent {
+export function parseCanonicalAgent(
+  filePath: string,
+  source: "agents" | "subagents",
+): CanonicalAgent {
   const content = fs.readFileSync(filePath, "utf-8");
   const extracted = extractFrontmatter(content);
   if (!extracted) {
@@ -233,7 +243,9 @@ export function discoverCanonicalAgents(
     { path: subagentsDir, source: "subagents" as const },
   ]) {
     if (!fs.existsSync(dir.path)) continue;
-    for (const file of fs.readdirSync(dir.path).filter((f) => f.endsWith(".md") && f !== ".gitkeep")) {
+    for (const file of fs
+      .readdirSync(dir.path)
+      .filter((f) => f.endsWith(".md") && f !== ".gitkeep")) {
       agents.push(parseCanonicalAgent(path.join(dir.path, file), dir.source));
     }
   }
@@ -241,7 +253,9 @@ export function discoverCanonicalAgents(
 }
 
 /** Returns a Map<toolId, Map<agentId, Override>> by traversing tool-specific subdirectories. */
-export function discoverOverrides(overridesDir: string): Map<string, Map<string, AgentOverride>> {
+export function discoverOverrides(
+  overridesDir: string,
+): Map<string, Map<string, AgentOverride>> {
   // Returns Map<toolId, Map<agentId, Override>>
   const result = new Map<string, Map<string, AgentOverride>>();
   if (!fs.existsSync(overridesDir)) return result;
@@ -250,7 +264,9 @@ export function discoverOverrides(overridesDir: string): Map<string, Map<string,
     const toolPath = path.join(overridesDir, toolDir);
     if (!fs.statSync(toolPath).isDirectory()) continue;
     const toolOverrides = new Map<string, AgentOverride>();
-    for (const file of fs.readdirSync(toolPath).filter((f) => f.endsWith(".md") && f !== ".gitkeep")) {
+    for (const file of fs
+      .readdirSync(toolPath)
+      .filter((f) => f.endsWith(".md") && f !== ".gitkeep")) {
       const override = parseOverride(path.join(toolPath, file));
       toolOverrides.set(override.agentId, override);
     }
@@ -291,12 +307,16 @@ export function mergeAgentWithOverride(
     const semanticCodeSearchResult = applySemanticCodeSearchGuidance({
       body: mergedBody,
       semanticCodeSearch: context.semanticCodeSearch,
-      tools: Array.isArray(mergedFm.tools) ? (mergedFm.tools as string[]) : undefined,
+      tools: Array.isArray(mergedFm.tools)
+        ? (mergedFm.tools as string[])
+        : undefined,
     });
 
     mergedFm = {
       ...mergedFm,
-      ...(semanticCodeSearchResult.tools ? { tools: semanticCodeSearchResult.tools } : {}),
+      ...(semanticCodeSearchResult.tools
+        ? { tools: semanticCodeSearchResult.tools }
+        : {}),
     };
     if (!semanticCodeSearchResult.tools && "tools" in mergedFm) {
       delete mergedFm.tools;
@@ -351,11 +371,17 @@ function resolveTargetFrontmatter(
  * @remarks
  * Mutates `frontmatter` in place so downstream formatters read only normalized fields.
  */
-function applyPortableTargetDefaults(frontmatter: Record<string, unknown>, toolId: string): void {
+function applyPortableTargetDefaults(
+  frontmatter: Record<string, unknown>,
+  toolId: string,
+): void {
   if (frontmatter.reasoning !== undefined) {
     const reasoning = normalizePortableReasoning(frontmatter.reasoning);
 
-    if (toolId === "codex" && frontmatter.model_reasoning_effort === undefined) {
+    if (
+      toolId === "codex" &&
+      frontmatter.model_reasoning_effort === undefined
+    ) {
       frontmatter.model_reasoning_effort = reasoning;
     }
     if (toolId === "claude-code" && frontmatter.effort === undefined) {
@@ -366,7 +392,11 @@ function applyPortableTargetDefaults(frontmatter: Record<string, unknown>, toolI
     }
   }
 
-  if (frontmatter.access !== undefined && toolId === "codex" && frontmatter.sandbox_mode === undefined) {
+  if (
+    frontmatter.access !== undefined &&
+    toolId === "codex" &&
+    frontmatter.sandbox_mode === undefined
+  ) {
     frontmatter.sandbox_mode = normalizeCodexSandboxMode(
       frontmatter.access,
       (frontmatter.id as string) ?? "<unknown-agent>",
@@ -378,7 +408,9 @@ function applyPortableTargetDefaults(frontmatter: Record<string, unknown>, toolI
     toolId === "claude-code" &&
     frontmatter.permissionMode === undefined
   ) {
-    frontmatter.permissionMode = normalizeCanonicalApprovalFlow(frontmatter.approvalFlow);
+    frontmatter.permissionMode = normalizeCanonicalApprovalFlow(
+      frontmatter.approvalFlow,
+    );
   }
 }
 
@@ -389,7 +421,9 @@ function applyPortableTargetDefaults(frontmatter: Record<string, unknown>, toolI
  */
 function normalizePortableReasoning(reasoning: unknown): string {
   if (typeof reasoning !== "string") {
-    throw new Error(`Invalid reasoning value: expected string, received ${typeof reasoning}.`);
+    throw new Error(
+      `Invalid reasoning value: expected string, received ${typeof reasoning}.`,
+    );
   }
 
   return reasoning;
@@ -400,7 +434,9 @@ function normalizePortableReasoning(reasoning: unknown): string {
  *
  * @throws Error when the value is not a string or not in the canonical approval-flow list.
  */
-function normalizeCanonicalApprovalFlow(approvalFlow: unknown): CanonicalApprovalFlow {
+function normalizeCanonicalApprovalFlow(
+  approvalFlow: unknown,
+): CanonicalApprovalFlow {
   if (typeof approvalFlow !== "string") {
     throw new Error(
       `Invalid approvalFlow value: expected string, received ${typeof approvalFlow}.`,
@@ -455,7 +491,7 @@ function deepMerge(
  * Provider mode names the MCP tool substitute; fallback mode directs agents to rg/grep workflows.
  */
 function buildSemanticCodeSearchBodyBlock(
-  guidance: SemanticCodeSearchGuidance
+  guidance: SemanticCodeSearchGuidance,
 ): string {
   if (guidance.kind === "provider") {
     return [
@@ -566,7 +602,8 @@ export function formatAugmentAgent(
     description: frontmatter.description,
   };
   if (frontmatter.color) fm.color = frontmatter.color;
-  if (frontmatter.disabled_tools) fm.disabled_tools = frontmatter.disabled_tools;
+  if (frontmatter.disabled_tools)
+    fm.disabled_tools = frontmatter.disabled_tools;
 
   return `---\n${yamlDump(fm)}---\n\n${merged.body}\n`;
 }
@@ -587,7 +624,8 @@ export function formatPiAgent(
   if (frontmatter.model) fm.model = frontmatter.model;
   if (frontmatter.thinking) fm.thinking = frontmatter.thinking;
   if (frontmatter.tools) fm.tools = frontmatter.tools;
-  if (frontmatter.defaultProgress !== undefined) fm.defaultProgress = frontmatter.defaultProgress;
+  if (frontmatter.defaultProgress !== undefined)
+    fm.defaultProgress = frontmatter.defaultProgress;
 
   // pi convention: no blank line between frontmatter and body
   return `---\n${yamlDump(fm)}---\n${merged.body}\n`;
@@ -614,7 +652,8 @@ export function formatKimiAgent(
   if (agentOverride.tools)
     (agentConfig.agent as Record<string, unknown>).tools = agentOverride.tools;
   if (agentOverride.exclude_tools)
-    (agentConfig.agent as Record<string, unknown>).exclude_tools = agentOverride.exclude_tools;
+    (agentConfig.agent as Record<string, unknown>).exclude_tools =
+      agentOverride.exclude_tools;
 
   return {
     yaml: yamlDump(agentConfig),
@@ -652,15 +691,20 @@ export function formatClaudeCodeAgent(
   context?: AgentGenerationContext,
 ): string {
   const merged = mergeAgentWithOverride(agent, override, context);
-  const frontmatter = resolveTargetFrontmatter(merged.frontmatter, "claude-code");
+  const frontmatter = resolveTargetFrontmatter(
+    merged.frontmatter,
+    "claude-code",
+  );
   const fm: Record<string, unknown> = {
     description: frontmatter.description,
   };
   if (frontmatter.model) fm.model = frontmatter.model;
   if (frontmatter.effort) fm.effort = frontmatter.effort;
-  if (frontmatter.permissionMode) fm.permissionMode = frontmatter.permissionMode;
+  if (frontmatter.permissionMode)
+    fm.permissionMode = frontmatter.permissionMode;
   if (frontmatter.tools) fm.tools = frontmatter.tools;
-  if (frontmatter.disallowedTools) fm.disallowedTools = frontmatter.disallowedTools;
+  if (frontmatter.disallowedTools)
+    fm.disallowedTools = frontmatter.disallowedTools;
   if (frontmatter.maxTurns) fm.maxTurns = frontmatter.maxTurns;
 
   return `---\n${yamlDump(fm)}---\n\n${merged.body}\n`;
@@ -675,20 +719,29 @@ export function formatCodexAgent(
   const merged = mergeAgentWithOverride(agent, override, context);
   const frontmatter = resolveTargetFrontmatter(merged.frontmatter, "codex");
   const name = (frontmatter.name as string) ?? agent.id;
-  const sandboxMode = normalizeCodexSandboxMode(frontmatter.sandbox_mode, agent.id);
+  const sandboxMode = normalizeCodexSandboxMode(
+    frontmatter.sandbox_mode,
+    agent.id,
+  );
 
   // Build TOML manually (avoids smol-toml dependency for now)
   const lines: string[] = [];
   lines.push(`name = "${name.replace(/"/g, '\\"')}"`);
-  lines.push(`description = "${(frontmatter.description as string).replace(/"/g, '\\"')}"`);
+  lines.push(
+    `description = "${(frontmatter.description as string).replace(/"/g, '\\"')}"`,
+  );
   lines.push(`developer_instructions = """`);
   lines.push(merged.body);
   lines.push(`"""`);
 
   if (frontmatter.model)
-    lines.push(`model = "${(frontmatter.model as string).replace(/"/g, '\\"')}"`);
+    lines.push(
+      `model = "${(frontmatter.model as string).replace(/"/g, '\\"')}"`,
+    );
   if (frontmatter.model_reasoning_effort)
-    lines.push(`model_reasoning_effort = "${(frontmatter.model_reasoning_effort as string).replace(/"/g, '\\"')}"`);
+    lines.push(
+      `model_reasoning_effort = "${(frontmatter.model_reasoning_effort as string).replace(/"/g, '\\"')}"`,
+    );
   if (sandboxMode) {
     lines.push(`sandbox_mode = "${sandboxMode}"`);
   }
@@ -828,11 +881,209 @@ function computeOutputFileName(
 ): string {
   // Augment uses `name` from merged frontmatter for filename
   if (target.toolId === "augment") {
-    const frontmatter = resolveTargetFrontmatter(merged.frontmatter, target.toolId);
+    const frontmatter = resolveTargetFrontmatter(
+      merged.frontmatter,
+      target.toolId,
+    );
     const name = (frontmatter.name as string) ?? agent.id;
     return name + target.fileExtension;
   }
   return agent.id + target.fileExtension;
+}
+
+/** Writes Kimi per-agent `.yaml` + `-system.md` when either side drifts; otherwise increments unchanged and optional verbose log. */
+function syncAgents_writeKimiDualFiles(options: {
+  outputDir: string;
+  agentId: string;
+  kimiOutput: KimiAgentOutput;
+  targetName: string;
+  log: LogFn;
+  verbose: boolean;
+  result: SyncResult;
+}): void {
+  const { outputDir, agentId, kimiOutput, targetName, log, verbose, result } =
+    options;
+  ensureDir(outputDir, log);
+  const yamlPath = path.join(outputDir, `${agentId}.yaml`);
+  const mdPath = path.join(outputDir, `${agentId}-system.md`);
+  const yamlExisted = fs.existsSync(yamlPath);
+  const mdExisted = fs.existsSync(mdPath);
+  const yamlChanged = hasDrift(yamlPath, kimiOutput.yaml);
+  const mdChanged = hasDrift(mdPath, kimiOutput.systemMd);
+  const changed = yamlChanged || mdChanged;
+  if (changed) {
+    fs.writeFileSync(yamlPath, kimiOutput.yaml, "utf-8");
+    fs.writeFileSync(mdPath, kimiOutput.systemMd, "utf-8");
+    const verb = yamlExisted && mdExisted ? "Updated" : "Wrote";
+    log(`  ${verb} ${targetName}: ${agentId}.yaml + ${agentId}-system.md`);
+    result.written++;
+  } else {
+    result.unchanged++;
+    if (verbose) {
+      log(`  ${targetName}: ${agentId}.yaml ✓ (up to date)`);
+    }
+  }
+}
+
+/** Check/dry-run path for Kimi dual outputs: drift logging matches legacy suffix rules for system.md. */
+function syncAgents_reportKimiDualDrift(options: {
+  outputDir: string;
+  agentId: string;
+  kimiOutput: KimiAgentOutput;
+  mode: "dry-run" | "check";
+  targetName: string;
+  log: LogFn;
+  verbose: boolean;
+  result: SyncResult;
+}): void {
+  const {
+    outputDir,
+    agentId,
+    kimiOutput,
+    mode,
+    targetName,
+    log,
+    verbose,
+    result,
+  } = options;
+  const yamlPath = path.join(outputDir, `${agentId}.yaml`);
+  const mdPath = path.join(outputDir, `${agentId}-system.md`);
+  const yamlDrift = hasDrift(yamlPath, kimiOutput.yaml);
+  const mdDrift = hasDrift(mdPath, kimiOutput.systemMd);
+  if (yamlDrift || mdDrift) {
+    if (mode === "check") {
+      result.driftDetected++;
+    }
+    log(
+      `  ${mode === "check" ? "DRIFT" : "WOULD WRITE"} ${targetName}: ${agentId}.yaml${mdDrift ? " + system.md" : ""}`,
+      mode === "check" ? "warn" : "info",
+    );
+  } else if (verbose) {
+    log(`  ${targetName}: ${agentId}.yaml ✓ (up to date)`);
+  }
+}
+
+/** Single generated artifact write with mkdir-once semantics for the target output directory. */
+function syncAgents_writeSingleGeneratedFile(options: {
+  outputDir: string;
+  outputPath: string;
+  content: string;
+  targetName: string;
+  outputFileName: string;
+  log: LogFn;
+  verbose: boolean;
+  result: SyncResult;
+}): void {
+  const {
+    outputDir,
+    outputPath,
+    content,
+    targetName,
+    outputFileName,
+    log,
+    verbose,
+    result,
+  } = options;
+  ensureDir(outputDir, log);
+  const existed = fs.existsSync(outputPath);
+  const changed = hasDrift(outputPath, content);
+  if (changed) {
+    fs.writeFileSync(outputPath, content, "utf-8");
+    const verb = existed ? "Updated" : "Wrote";
+    log(`  ${verb} ${targetName}: ${outputFileName}`);
+    result.written++;
+  } else {
+    result.unchanged++;
+    if (verbose) {
+      log(`  ${targetName}: ${outputFileName} ✓ (up to date)`);
+    }
+  }
+}
+
+/** Non-write modes for a single path: drift vs verbose up-to-date line. */
+function syncAgents_reportSingleGeneratedDrift(options: {
+  outputPath: string;
+  content: string;
+  mode: "dry-run" | "check";
+  targetName: string;
+  outputFileName: string;
+  log: LogFn;
+  verbose: boolean;
+  result: SyncResult;
+}): void {
+  const {
+    outputPath,
+    content,
+    mode,
+    targetName,
+    outputFileName,
+    log,
+    verbose,
+    result,
+  } = options;
+  if (hasDrift(outputPath, content)) {
+    if (mode === "check") {
+      result.driftDetected++;
+    }
+    log(
+      `  ${mode === "check" ? "DRIFT" : "WOULD WRITE"} ${targetName}: ${outputFileName}`,
+      mode === "check" ? "warn" : "info",
+    );
+  } else if (verbose) {
+    log(`  ${targetName}: ${outputFileName} ✓ (up to date)`);
+  }
+}
+
+/**
+ * Writes Kimi root `agent.yaml` when drifted.
+ *
+ * @remarks
+ * Intentionally does not call `ensureDir` — matches historical behavior (parent layout expected).
+ */
+function syncAgents_writeKimiRootYaml(options: {
+  rootPath: string;
+  rootYaml: string;
+  log: LogFn;
+  verbose: boolean;
+  result: SyncResult;
+}): void {
+  const { rootPath, rootYaml, log, verbose, result } = options;
+  const existed = fs.existsSync(rootPath);
+  const changed = hasDrift(rootPath, rootYaml);
+  if (changed) {
+    fs.writeFileSync(rootPath, rootYaml, "utf-8");
+    const verb = existed ? "Updated" : "Wrote";
+    log(`  ${verb} Kimi: agent.yaml (root)`);
+    result.written++;
+  } else {
+    result.unchanged++;
+    if (verbose) {
+      log(`  Kimi: agent.yaml (root) ✓ (up to date)`);
+    }
+  }
+}
+
+/** Check/dry-run for Kimi root `agent.yaml` beside `.kimi/agents/` (log labels omit "(root)" here). */
+function syncAgents_reportKimiRootDrift(options: {
+  rootPath: string;
+  rootYaml: string;
+  mode: "dry-run" | "check";
+  log: LogFn;
+  verbose: boolean;
+  result: SyncResult;
+}): void {
+  const { rootPath, rootYaml, mode, log, verbose, result } = options;
+  if (hasDrift(rootPath, rootYaml)) {
+    if (mode === "check") {
+      result.driftDetected++;
+    }
+    log(
+      `  ${mode === "check" ? "DRIFT" : "WOULD WRITE"} Kimi: agent.yaml`,
+      mode === "check" ? "warn" : "info",
+    );
+  } else if (verbose) {
+    log(`  Kimi: agent.yaml ✓ (up to date)`);
+  }
 }
 
 /** Syncs all agents to all targets. In "check" mode, counts drift; in "write" mode, writes files; in "dry-run" mode, logs without writing. */
@@ -840,7 +1091,7 @@ export function syncAgents(
   agents: CanonicalAgent[],
   overrides: Map<string, Map<string, AgentOverride>>,
   targets: AgentTarget[],
-  mode: "dry-run" | "write" | "check",
+  mode: CanonicalAgentsLib_SyncMode,
   context: AgentGenerationContext | undefined,
   log: LogFn,
   options: { verbose?: boolean } = {},
@@ -872,41 +1123,27 @@ export function syncAgents(
         // Kimi is special: produces two files per agent
         if (target.toolId === "kimi") {
           const kimiOutput = formatterResult as KimiAgentOutput;
-          const yamlPath = path.join(target.outputDir, `${agent.id}.yaml`);
-          const mdPath = path.join(target.outputDir, `${agent.id}-system.md`);
-
           if (mode === "write") {
-            ensureDir(target.outputDir, log);
-            const yamlExisted = fs.existsSync(yamlPath);
-            const mdExisted = fs.existsSync(mdPath);
-            const yamlChanged = hasDrift(yamlPath, kimiOutput.yaml);
-            const mdChanged = hasDrift(mdPath, kimiOutput.systemMd);
-            const changed = yamlChanged || mdChanged;
-            if (changed) {
-              fs.writeFileSync(yamlPath, kimiOutput.yaml, "utf-8");
-              fs.writeFileSync(mdPath, kimiOutput.systemMd, "utf-8");
-              const verb = yamlExisted && mdExisted ? "Updated" : "Wrote";
-              log(`  ${verb} ${target.name}: ${agent.id}.yaml + ${agent.id}-system.md`);
-              result.written++;
-            } else {
-              result.unchanged++;
-              if (verbose) {
-                log(`  ${target.name}: ${agent.id}.yaml ✓ (up to date)`);
-              }
-            }
+            syncAgents_writeKimiDualFiles({
+              outputDir: target.outputDir,
+              agentId: agent.id,
+              kimiOutput,
+              targetName: target.name,
+              log,
+              verbose,
+              result,
+            });
           } else {
-            // dry-run or check
-            const yamlDrift = hasDrift(yamlPath, kimiOutput.yaml);
-            const mdDrift = hasDrift(mdPath, kimiOutput.systemMd);
-            if (yamlDrift || mdDrift) {
-              if (mode === "check") result.driftDetected++;
-              log(
-                `  ${mode === "check" ? "DRIFT" : "WOULD WRITE"} ${target.name}: ${agent.id}.yaml${mdDrift ? " + system.md" : ""}`,
-                mode === "check" ? "warn" : "info",
-              );
-            } else if (verbose) {
-              log(`  ${target.name}: ${agent.id}.yaml ✓ (up to date)`);
-            }
+            syncAgents_reportKimiDualDrift({
+              outputDir: target.outputDir,
+              agentId: agent.id,
+              kimiOutput,
+              mode,
+              targetName: target.name,
+              log,
+              verbose,
+              result,
+            });
           }
           result.generated++;
           continue;
@@ -915,30 +1152,27 @@ export function syncAgents(
         const content = formatterResult as string;
 
         if (mode === "write") {
-          ensureDir(target.outputDir, log);
-          const existed = fs.existsSync(outputPath);
-          const changed = hasDrift(outputPath, content);
-          if (changed) {
-            fs.writeFileSync(outputPath, content, "utf-8");
-            const verb = existed ? "Updated" : "Wrote";
-            log(`  ${verb} ${target.name}: ${outputFileName}`);
-            result.written++;
-          } else {
-            result.unchanged++;
-            if (verbose) {
-              log(`  ${target.name}: ${outputFileName} ✓ (up to date)`);
-            }
-          }
+          syncAgents_writeSingleGeneratedFile({
+            outputDir: target.outputDir,
+            outputPath,
+            content,
+            targetName: target.name,
+            outputFileName,
+            log,
+            verbose,
+            result,
+          });
         } else {
-          if (hasDrift(outputPath, content)) {
-            if (mode === "check") result.driftDetected++;
-            log(
-              `  ${mode === "check" ? "DRIFT" : "WOULD WRITE"} ${target.name}: ${outputFileName}`,
-              mode === "check" ? "warn" : "info",
-            );
-          } else if (verbose) {
-            log(`  ${target.name}: ${outputFileName} ✓ (up to date)`);
-          }
+          syncAgents_reportSingleGeneratedDrift({
+            outputPath,
+            content,
+            mode,
+            targetName: target.name,
+            outputFileName,
+            log,
+            verbose,
+            result,
+          });
         }
         result.generated++;
       } catch (err: unknown) {
@@ -953,32 +1187,28 @@ export function syncAgents(
   const kimiTarget = targets.find((t) => t.toolId === "kimi");
   if (kimiTarget) {
     const rootYaml = generateKimiRootYaml(agents);
-    const rootPath = path.join(path.dirname(kimiTarget.outputDir), "agent.yaml");
+    const rootPath = path.join(
+      path.dirname(kimiTarget.outputDir),
+      "agent.yaml",
+    );
 
     if (mode === "write") {
-      const existed = fs.existsSync(rootPath);
-      const changed = hasDrift(rootPath, rootYaml);
-      if (changed) {
-        fs.writeFileSync(rootPath, rootYaml, "utf-8");
-        const verb = existed ? "Updated" : "Wrote";
-        log(`  ${verb} Kimi: agent.yaml (root)`);
-        result.written++;
-      } else {
-        result.unchanged++;
-        if (verbose) {
-          log(`  Kimi: agent.yaml (root) ✓ (up to date)`);
-        }
-      }
+      syncAgents_writeKimiRootYaml({
+        rootPath,
+        rootYaml,
+        log,
+        verbose,
+        result,
+      });
     } else {
-      if (hasDrift(rootPath, rootYaml)) {
-        if (mode === "check") result.driftDetected++;
-        log(
-          `  ${mode === "check" ? "DRIFT" : "WOULD WRITE"} Kimi: agent.yaml`,
-          mode === "check" ? "warn" : "info",
-        );
-      } else if (verbose) {
-        log(`  Kimi: agent.yaml ✓ (up to date)`);
-      }
+      syncAgents_reportKimiRootDrift({
+        rootPath,
+        rootYaml,
+        mode,
+        log,
+        verbose,
+        result,
+      });
     }
     result.generated++;
   }
@@ -986,11 +1216,52 @@ export function syncAgents(
   return result;
 }
 
+/** Applies write/check/dry-run semantics for one Augment command file; mutates `result` counters (not `generated`). */
+function syncCommands_processAugmentCommandIteration(options: {
+  command: CanonicalCommand;
+  commandsOutputDir: string;
+  mode: CanonicalAgentsLib_SyncMode;
+  log: LogFn;
+  verbose: boolean;
+  result: SyncResult;
+}): void {
+  const { command, commandsOutputDir, mode, log, verbose, result } = options;
+  const content = formatAugmentCommand(command);
+  const outputPath = path.join(commandsOutputDir, `${command.id}.md`);
+
+  if (mode === "write") {
+    ensureDir(commandsOutputDir, log);
+    const existed = fs.existsSync(outputPath);
+    const changed = hasDrift(outputPath, content);
+    if (changed) {
+      fs.writeFileSync(outputPath, content, "utf-8");
+      const verb = existed ? "Updated" : "Wrote";
+      log(`  ${verb} Augment command: ${command.id}.md`);
+      result.written++;
+    } else {
+      result.unchanged++;
+      if (verbose) {
+        log(`  Augment command: ${command.id}.md ✓ (up to date)`);
+      }
+    }
+  } else {
+    if (hasDrift(outputPath, content)) {
+      if (mode === "check") result.driftDetected++;
+      log(
+        `  ${mode === "check" ? "DRIFT" : "WOULD WRITE"} Augment command: ${command.id}.md`,
+        mode === "check" ? "warn" : "info",
+      );
+    } else if (verbose) {
+      log(`  Augment command: ${command.id}.md ✓ (up to date)`);
+    }
+  }
+}
+
 /** Syncs Augment command files to commandsOutputDir. Generates formatAugmentCommand output for each command. */
 export function syncCommands(
   commands: CanonicalCommand[],
   commandsOutputDir: string,
-  mode: "dry-run" | "write" | "check",
+  mode: CanonicalAgentsLib_SyncMode,
   log: LogFn,
   options: { verbose?: boolean } = {},
 ): SyncResult {
@@ -1005,36 +1276,15 @@ export function syncCommands(
   };
 
   for (const command of commands) {
-    const content = formatAugmentCommand(command);
-    const outputPath = path.join(commandsOutputDir, `${command.id}.md`);
-
     try {
-      if (mode === "write") {
-        ensureDir(commandsOutputDir, log);
-        const existed = fs.existsSync(outputPath);
-        const changed = hasDrift(outputPath, content);
-        if (changed) {
-          fs.writeFileSync(outputPath, content, "utf-8");
-          const verb = existed ? "Updated" : "Wrote";
-          log(`  ${verb} Augment command: ${command.id}.md`);
-          result.written++;
-        } else {
-          result.unchanged++;
-          if (verbose) {
-            log(`  Augment command: ${command.id}.md ✓ (up to date)`);
-          }
-        }
-      } else {
-        if (hasDrift(outputPath, content)) {
-          if (mode === "check") result.driftDetected++;
-          log(
-            `  ${mode === "check" ? "DRIFT" : "WOULD WRITE"} Augment command: ${command.id}.md`,
-            mode === "check" ? "warn" : "info",
-          );
-        } else if (verbose) {
-          log(`  Augment command: ${command.id}.md ✓ (up to date)`);
-        }
-      }
+      syncCommands_processAugmentCommandIteration({
+        command,
+        commandsOutputDir,
+        mode,
+        log,
+        verbose,
+        result,
+      });
       result.generated++;
     } catch (err: unknown) {
       result.errors++;

@@ -78,6 +78,24 @@ function getErrorCode(error: unknown): string | null {
 }
 
 /**
+ * Adds trimmed non-empty skill names from a comma-separated argv fragment into the accumulator set.
+ *
+ * @remarks
+ * PURITY: No I/O.
+ */
+function addCommaSeparatedSkillNames(options: {
+  requestedSkillNames: Set<string>;
+  commaSeparatedValue: string;
+}): void {
+  for (const item of options.commaSeparatedValue.split(",")) {
+    const skillName = item.trim();
+    if (skillName.length > 0) {
+      options.requestedSkillNames.add(skillName);
+    }
+  }
+}
+
+/**
  * Parses `--skill`, `--skill=name`, `--skills`, and `--skills=a,b` argv forms into a de-duplicated list.
  *
  * @remarks
@@ -113,12 +131,10 @@ export function parseCliOptions(argv: string[]): CliOptions {
     if (argument === "--skills") {
       const nextValue = argv[index + 1];
       if (nextValue) {
-        for (const item of nextValue.split(",")) {
-          const skillName = item.trim();
-          if (skillName.length > 0) {
-            requestedSkillNames.add(skillName);
-          }
-        }
+        addCommaSeparatedSkillNames({
+          requestedSkillNames,
+          commaSeparatedValue: nextValue,
+        });
         index += 1;
       }
       continue;
@@ -126,12 +142,10 @@ export function parseCliOptions(argv: string[]): CliOptions {
 
     if (argument.startsWith("--skills=")) {
       const value = argument.slice("--skills=".length);
-      for (const item of value.split(",")) {
-        const skillName = item.trim();
-        if (skillName.length > 0) {
-          requestedSkillNames.add(skillName);
-        }
-      }
+      addCommaSeparatedSkillNames({
+        requestedSkillNames,
+        commaSeparatedValue: value,
+      });
     }
   }
 
